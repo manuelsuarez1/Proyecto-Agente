@@ -25,7 +25,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ currentConvId, setCurrentCon
   const [messages, setMessages] = useState<Message[]>([]);
   const [mode, setMode] = useState('balanced');
   const [isLoading, setIsLoading] = useState(false);
-  const [modelAlias, setModelAlias] = useState('');
+  const [config, setConfig] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,21 +41,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ currentConvId, setCurrentCon
   }, [messages]);
 
   useEffect(() => {
-    const loadAlias = async () => {
+    const loadConfig = async () => {
       try {
         const configContent = await window.electronAPI.readFile('config.json');
         if (configContent) {
-          const config = JSON.parse(configContent);
-          setModelAlias(config.modelAlias || config.modelName || 'AI Assistant');
+          setConfig(JSON.parse(configContent));
         }
       } catch (err) {
         console.error('Error loading config:', err);
       }
     };
-    loadAlias();
+    loadConfig();
 
     const handleConfigUpdate = () => {
-      loadAlias();
+      loadConfig();
     };
     window.addEventListener('config-updated', handleConfigUpdate);
     return () => window.removeEventListener('config-updated', handleConfigUpdate);
@@ -94,9 +93,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ currentConvId, setCurrentCon
   const fetchLLMResponse = async (userMessages: Message[]) => {
     try {
       const configStr = await window.electronAPI.readFile('config.json');
-      const config = configStr ? JSON.parse(configStr) : null;
+      const loadedConfig = configStr ? JSON.parse(configStr) : null;
       
-      if (!config || !config.apiKey) {
+      let activeModel = loadedConfig;
+      if (loadedConfig && loadedConfig.models) {
+        activeModel = loadedConfig.models.find((m: any) => m.id === loadedConfig.activeModelId) || loadedConfig.models[0];
+      }
+      
+      if (!activeModel || !activeModel.apiKey) {
         throw new Error("API Key not configured. Please check Settings.");
       }
 
@@ -124,18 +128,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ currentConvId, setCurrentCon
         ...userMessages
       ];
 
-      const baseUrlCleaned = config.baseUrl.replace(/\/+$/, '');
+      const baseUrlCleaned = activeModel.baseUrl.replace(/\/+$/, '');
       const response = await fetch(`${baseUrlCleaned}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`
+          'Authorization': `Bearer ${activeModel.apiKey}`
         },
         body: JSON.stringify({
-          model: config.modelName || 'gpt-4o-mini',
+          model: activeModel.modelName || 'gpt-4o-mini',
           messages: apiMessages,
-          temperature: config.temperature || 0.7,
-          max_tokens: config.maxTokens || 1500
+          temperature: activeModel.temperature || 0.7,
+          max_tokens: activeModel.maxTokens || 1500
         })
       });
 
@@ -177,11 +181,41 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ currentConvId, setCurrentCon
     setIsLoading(false);
   };
 
+  const handleModelChange = async (newModelId: string) => {
+    if (!config) return;
+    const newConfig = { ...config, activeModelId: newModelId };
+    setConfig(newConfig);
+    await window.electronAPI.writeFile('config.json', JSON.stringify(newConfig, null, 2));
+    window.dispatchEvent(new Event('config-updated'));
+  };
+
+  const getActiveModelAlias = () => {
+    if (!config) return 'AI Assistant';
+    if (config.models) {
+      const m = config.models.find((m: any) => m.id === config.activeModelId);
+      return m ? m.modelAlias : 'AI Assistant';
+    }
+    return config.modelAlias || 'AI Assistant';
+  };
+
   return (
     <main className="chat-area">
       <div className="chat-header glass">
-        <div className="chat-title-group">
-          <h2>{modelAlias || 'AI Assistant'}</h2>
+        <div className="chat-title-group" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {config && config.models && config.models.length > 0 ? (
+            <select 
+              className="input-field" 
+              value={config.activeModelId || ''} 
+              onChange={(e) => handleModelChange(e.target.value)}
+              style={{ padding: '6px 12px', fontSize: '1rem', fontWeight: 'bold' }}
+            >
+              {config.models.map((m: any) => (
+                <option key={m.id} value={m.id}>{m.modelAlias || m.modelName}</option>
+              ))}
+            </select>
+          ) : (
+            <h2>{getActiveModelAlias()}</h2>
+          )}
         </div>
         
         <div className="mode-selector">
