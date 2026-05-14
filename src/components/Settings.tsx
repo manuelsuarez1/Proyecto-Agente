@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCcw, Cpu, Key, Zap, Brain, Scale } from 'lucide-react';
+import { Save, RefreshCcw, Cpu, Key, Zap, Brain, Scale, Eye, EyeOff } from 'lucide-react';
 import './Settings.css';
 
 interface Config {
   baseUrl: string;
   apiKey: string;
   modelName: string;
+  modelAlias: string;
   globalMode: string;
   temperature: number;
   maxTokens: number;
@@ -15,6 +16,7 @@ const DEFAULT_CONFIG: Config = {
   baseUrl: 'https://api.openai.com/v1',
   apiKey: '',
   modelName: 'gpt-4o-mini',
+  modelAlias: 'AgentX Assistant',
   globalMode: 'balanced',
   temperature: 0.7,
   maxTokens: 1500,
@@ -25,6 +27,7 @@ export const Settings: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [testMessage, setTestMessage] = useState<{text: string, type: 'success' | 'error' | 'info' | ''}>({text: '', type: ''});
+  const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -51,6 +54,7 @@ export const Settings: React.FC = () => {
       const success = await window.electronAPI.writeFile('config.json', JSON.stringify(config, null, 2));
       if (success) {
         setSaveMessage('Settings saved successfully!');
+        window.dispatchEvent(new Event('config-updated'));
       } else {
         setSaveMessage('Failed to save settings.');
       }
@@ -118,13 +122,22 @@ export const Settings: React.FC = () => {
           </div>
           <div className="form-group">
             <label>API Key</label>
-            <input 
-              type="password" 
-              className="input-field" 
-              placeholder="sk-..." 
-              value={config.apiKey}
-              onChange={(e) => handleChange('apiKey', e.target.value)}
-            />
+            <div className="password-input-wrapper">
+              <input 
+                type={showApiKey ? "text" : "password"} 
+                className="input-field" 
+                placeholder="sk-..." 
+                value={config.apiKey}
+                onChange={(e) => handleChange('apiKey', e.target.value)}
+              />
+              <button 
+                type="button" 
+                className="password-toggle-btn"
+                onClick={() => setShowApiKey(!showApiKey)}
+              >
+                {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
             <span className="form-hint">Stored locally. Never sent to third-party servers.</span>
           </div>
         </section>
@@ -143,6 +156,17 @@ export const Settings: React.FC = () => {
               placeholder="gpt-4o-mini" 
               value={config.modelName}
               onChange={(e) => handleChange('modelName', e.target.value)}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Model Alias (Displayed in App)</label>
+            <input 
+              type="text" 
+              className="input-field" 
+              placeholder="E.g., My Personal Assistant" 
+              value={config.modelAlias || ''}
+              onChange={(e) => handleChange('modelAlias', e.target.value)}
             />
           </div>
 

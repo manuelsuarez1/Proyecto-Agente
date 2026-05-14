@@ -25,6 +25,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ currentConvId, setCurrentCon
   const [messages, setMessages] = useState<Message[]>([]);
   const [mode, setMode] = useState('balanced');
   const [isLoading, setIsLoading] = useState(false);
+  const [modelAlias, setModelAlias] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,6 +39,27 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ currentConvId, setCurrentCon
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    const loadAlias = async () => {
+      try {
+        const configContent = await window.electronAPI.readFile('config.json');
+        if (configContent) {
+          const config = JSON.parse(configContent);
+          setModelAlias(config.modelAlias || config.modelName || 'AI Assistant');
+        }
+      } catch (err) {
+        console.error('Error loading config:', err);
+      }
+    };
+    loadAlias();
+
+    const handleConfigUpdate = () => {
+      loadAlias();
+    };
+    window.addEventListener('config-updated', handleConfigUpdate);
+    return () => window.removeEventListener('config-updated', handleConfigUpdate);
+  }, []);
 
   const loadConversation = async (id: string) => {
     try {
@@ -159,8 +181,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ currentConvId, setCurrentCon
     <main className="chat-area">
       <div className="chat-header glass">
         <div className="chat-title-group">
-          <h2>{currentConvId ? 'Conversation Details' : 'New Conversation'}</h2>
-          <p className="chat-subtitle">AI Assistant Ready</p>
+          <h2>{modelAlias || 'AI Assistant'}</h2>
         </div>
         
         <div className="mode-selector">
