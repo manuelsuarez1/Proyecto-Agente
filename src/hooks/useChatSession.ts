@@ -221,9 +221,10 @@ export function useChatSession() {
   const sendUserMessage = useCallback(async (
     content: string,
     fetchAssistantReply: (messages: Message[]) => Promise<string>,
+    image?: string,
   ): Promise<boolean> => {
     const trimmed = content.trim();
-    if (!trimmed) return false;
+    if (!trimmed && !image) return false;
 
     const creating = !activeIdRef.current;
     const conversationId = activeIdRef.current ?? crypto.randomUUID();
@@ -236,7 +237,11 @@ export function useChatSession() {
 
     const sendEpoch = sessionEpochRef.current;
     const modelId = conversationModelId ?? fallbackModelId;
-    const userMessage: Message = { role: 'user', content: trimmed };
+    const userMessage: Message = { 
+      role: 'user', 
+      content: trimmed,
+      ...(image ? { image } : {})
+    };
     const previousMessages = messages;
     const withUser: Message[] = [...messages, userMessage];
 

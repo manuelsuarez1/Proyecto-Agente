@@ -25,6 +25,22 @@ const markdownComponents: Components = {
       </code>
     );
   },
+  img({ src, alt }) {
+    if (!src) return null;
+    return (
+      <div className="markdown-image-wrapper">
+        <img
+          src={src}
+          alt={alt || 'Imagen'}
+          className="markdown-image"
+          loading="lazy"
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('zoom-image', { detail: src }));
+          }}
+        />
+      </div>
+    );
+  },
 };
 
 interface MarkdownMessageProps {

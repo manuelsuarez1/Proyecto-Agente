@@ -63,7 +63,21 @@ export async function requestAssistantReply(
   const apiMessages = [
     await buildSystemMessage(config),
     ...(searchContext ? [searchContext] : []),
-    ...messages,
+    ...messages.map(m => {
+      if (m.image) {
+        return {
+          role: m.role,
+          content: [
+            { type: 'text', text: m.content },
+            { type: 'image_url', image_url: { url: m.image } }
+          ]
+        };
+      }
+      return {
+        role: m.role,
+        content: m.content
+      };
+    }),
   ];
 
   let content: string;

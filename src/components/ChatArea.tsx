@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
-import { Bot, Search, Send, Sparkles, User, Globe } from 'lucide-react';
+import { Bot, Search, Send, Sparkles, User, Globe, Image as ImageIcon } from 'lucide-react';
 import {
   buildSearchContext,
   requestAssistantReply,
@@ -74,6 +74,18 @@ const MessageList = memo(function MessageList({
             className={`message-content ${message.role === 'assistant' ? 'glass' : 'user-bubble'}`}
             style={{ whiteSpace: message.role === 'assistant' ? 'normal' : 'pre-wrap' }}
           >
+            {message.image && (
+              <div className="user-message-image-wrapper">
+                <img
+                  src={message.image}
+                  alt="Imagen adjunta"
+                  className="user-message-image"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('zoom-image', { detail: message.image }));
+                  }}
+                />
+              </div>
+            )}
             {message.role === 'assistant' ? (() => {
               const content = message.content;
               const thinkRegex = /<think>([\s\S]*?)<\/think>|<thought>([\s\S]*?)<\/thought>/i;
@@ -138,6 +150,19 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [replyStatus, setReplyStatus] = useState<ReplyStatus>('idle');
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [zoomImage, setZoomImage] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleZoom = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      setZoomImage(customEvent.detail);
+    };
+    window.addEventListener('zoom-image', handleZoom);
+    return () => window.removeEventListener('zoom-image', handleZoom);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -167,21 +192,36 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
   if (activeId !== prevActiveId) {
     setPrevActiveId(activeId);
     setReplyStatus('idle');
+    setSelectedImage(null);
   }
 
   const selectedModelId = config?.models.some(item => item.id === activeModelId)
     ? activeModelId
     : (config?.models[0]?.id ?? activeModelId);
 
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSelectedImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || isReplyPending || isLoadingChat) return;
+    if ((!input.trim() && !selectedImage) || isReplyPending || isLoadingChat) return;
     if (!config) {
       setChatError('Configuración no cargada.');
       return;
     }
 
     const content = input.trim();
+    const img = selectedImage || undefined;
     setInput('');
+    setSelectedImage(null);
     setReplyStatus('idle');
 
     await sendUserMessage(content, async (userMessages) => {
@@ -204,7 +244,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
       setReplyStatus('thinking');
       const replyConfig = { ...config, activeModelId: selectedModelId };
       return requestAssistantReply(replyConfig, userMessages, searchContext);
-    });
+    }, img);
   };
 
   const handleModelChange = (modelId: string) => {
@@ -212,7 +252,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
   };
 
   const activeAlias = config?.models.find(item => item.id === selectedModelId)?.modelAlias || 'AI Assistant';
-  const canSend = Boolean(input.trim()) && !isReplyPending && !isLoadingChat;
+  const canSend = (Boolean(input.trim()) || Boolean(selectedImage)) && !isReplyPending && !isLoadingChat;
 
   return (
     <main className="chat-area">
@@ -244,7 +284,36 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
       />
 
       <div className="input-area glass">
+        {selectedImage && (
+          <div className="image-preview-container glass">
+            <img src={selectedImage} alt="Preview" className="image-preview-thumbnail" />
+            <button
+              type="button"
+              className="image-preview-remove-btn"
+              onClick={() => setSelectedImage(null)}
+              title="Quitar imagen"
+            >
+              &times;
+            </button>
+          </div>
+        )}
         <div className="input-wrapper">
+          <button
+            type="button"
+            className="search-toggle-btn"
+            onClick={() => fileInputRef.current?.click()}
+            title="Adjuntar imagen"
+            disabled={isReplyPending || isLoadingChat}
+          >
+            <ImageIcon size={18} />
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept="image/*"
+            style={{ display: 'none' }}
+          />
           <button
             type="button"
             className={`search-toggle-btn ${webSearchEnabled ? 'active' : ''}`}
@@ -257,7 +326,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
           <textarea
             value={input}
             onChange={event => setInput(event.target.value)}
-            placeholder="Escribe un mensaje... (Shift + Enter para salto de línea)"
+            placeholder="Escribe un mensaje o adjunta una imagen... (Shift + Enter para salto de línea)"
             rows={1}
             disabled={isReplyPending || isLoadingChat}
             style={{ maxHeight: '200px', overflowY: 'auto' }}
@@ -278,6 +347,16 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
           </button>
         </div>
       </div>
+
+      {zoomImage && (
+        <div className="lightbox-overlay" onClick={() => setZoomImage(null)}>
+          <div className="lightbox-content glass" onClick={(e) => e.stopPropagation()}>
+            <img src={zoomImage} alt="Zoomed" className="lightbox-image" />
+            <button type="button" className="lightbox-close" onClick={() => setZoomImage(null)}>&times;</button>
+            <a href={zoomImage} download="imagen.png" className="lightbox-download-btn btn btn-primary">Descargar</a>
+          </div>
+        </div>
+      )}
     </main>
   );
 };
