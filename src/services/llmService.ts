@@ -2,37 +2,6 @@ import { getActiveModel } from './configService';
 import { readActiveSkillTexts } from './skillsService';
 import type { AppConfig, InvokeLLMResponse, Message, ModelConfig, SearchResult } from '../shared/types';
 
-const SEARCH_KEYWORDS = [
-  'noticias', 'news', 'última hora', 'breaking', 'actualidad',
-  'hoy', 'today', 'ayer', 'ahora', 'now', 'actual', 'reciente', 'recent',
-  'elecciones', 'electoral', 'votación', 'votos', 'ganó', 'gano', 'ganador', 'ganadora',
-  'resultado', 'resultados', 'campaña', 'referendum', 'referéndum',
-  'presidente', 'ministro', 'gobierno', 'parlamento', 'congreso', 'senado',
-  'precio', 'cotización', 'bolsa', 'stock', 'crypto', 'bitcoin',
-  'partido', 'clasificación', 'tabla', 'marcador', 'score',
-  'anunció', 'anuncio', 'confirma', 'confirman', 'reporta', 'reportan',
-  '2024', '2025', '2026', '2027',
-];
-
-const SEARCH_PATTERNS = [
-  /\bqu[ií]en\s+(gan[oó]|ha\s+ganado|gana)\b/i,
-  /\bqu[eé]\s+pas[oó]\b/i,
-  /\bultim[ao]s?\s+noticias\b/i,
-  /\bresultado(s)?\s+de\b/i,
-  /\b(elecciones?|referendum)\b/i,
-  /\b(noticia|suceso|acontecimiento)\b/i,
-  /\b(20\d{2})\b/,
-  /\b(qu[eé]\s+es|qu[eé]\s+son|qui[eé]n\s+es|qui[eé]n\s+era)\b/i,
-  /\b(c[oó]mo\s+funciona|c[oó]mo\s+se\s+|definici[oó]n\s+de|significado\s+de)\b/i,
-  /\b(documentaci[oó]n|tutorial|ejemplo\s+de|comparar|mejor\s+(forma|herramienta))\b/i,
-  /\b(precio\s+de|cu[aá]nto\s+cuesta|horario\s+de|d[oó]nde\s+(est[aá]|comprar))\b/i,
-];
-
-export function needsWebSearch(query: string): boolean {
-  const normalized = query.toLowerCase();
-  if (SEARCH_KEYWORDS.some(keyword => normalized.includes(keyword))) return true;
-  return SEARCH_PATTERNS.some(pattern => pattern.test(query));
-}
 
 export function buildSearchContext(results: SearchResult[]): Message | null {
   const usefulResults = results.filter(result => result.title !== 'Error de búsqueda' && result.title !== 'Sin resultados');

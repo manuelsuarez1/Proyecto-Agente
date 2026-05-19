@@ -1,8 +1,7 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
-import { Bot, Search, Send, Sparkles, User } from 'lucide-react';
+import { Bot, Search, Send, Sparkles, User, Globe } from 'lucide-react';
 import {
   buildSearchContext,
-  needsWebSearch,
   requestAssistantReply,
 } from '../services/llmService';
 import { loadConfig } from '../services/configService';
@@ -127,6 +126,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
   const [input, setInput] = useState('');
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [replyStatus, setReplyStatus] = useState<ReplyStatus>('idle');
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,7 +177,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
       const lastMessage = userMessages[userMessages.length - 1];
       let searchContext: Message | null = null;
 
-      if (lastMessage?.role === 'user' && needsWebSearch(lastMessage.content)) {
+      if (lastMessage?.role === 'user' && webSearchEnabled) {
         setReplyStatus('searching');
         if (window.electronAPI) {
           const results = await window.electronAPI.performSearch(lastMessage.content);
@@ -185,7 +185,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
         } else {
           searchContext = {
             role: 'system',
-            content: 'La búsqueda web automática no está disponible en la vista de navegador.',
+            content: 'La búsqueda web no está disponible en la vista de navegador.',
           };
         }
       }
@@ -234,10 +234,19 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
 
       <div className="input-area glass">
         <div className="input-wrapper">
+          <button
+            type="button"
+            className={`search-toggle-btn ${webSearchEnabled ? 'active' : ''}`}
+            onClick={() => setWebSearchEnabled(prev => !prev)}
+            title={webSearchEnabled ? 'Búsqueda web activada' : 'Activar búsqueda web'}
+            disabled={isReplyPending || isLoadingChat}
+          >
+            <Globe size={18} />
+          </button>
           <textarea
             value={input}
             onChange={event => setInput(event.target.value)}
-            placeholder="Type your message... (Shift + Enter for new line)"
+            placeholder="Escribe un mensaje... (Shift + Enter para salto de línea)"
             rows={1}
             disabled={isReplyPending || isLoadingChat}
             style={{ maxHeight: '200px', overflowY: 'auto' }}
