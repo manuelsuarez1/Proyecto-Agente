@@ -61,7 +61,17 @@ export async function requestAssistantReply(
 
   if (isImagenModel) {
     const modelName = activeModel.modelName;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateImages`;
+    let url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateImages`;
+    
+    if (activeModel.baseUrl && activeModel.baseUrl.trim()) {
+      const trimmedBaseUrl = activeModel.baseUrl.trim();
+      if (trimmedBaseUrl.endsWith(':generateImages')) {
+        url = trimmedBaseUrl;
+      } else {
+        url = `${trimmedBaseUrl.replace(/\/+$/, '')}/models/${modelName}:generateImages`;
+      }
+    }
+
     const headers = {
       'Content-Type': 'application/json',
       'x-goog-api-key': activeModel.apiKey,
@@ -72,8 +82,10 @@ export async function requestAssistantReply(
 
     const body = JSON.stringify({
       prompt: promptText,
-      numberOfImages: 1,
-      aspectRatio: '1:1',
+      config: {
+        numberOfImages: 1,
+        aspectRatio: '1:1',
+      }
     });
 
     let data;
@@ -184,15 +196,27 @@ export async function testModelConnection(model: ModelConfig): Promise<InvokeLLM
   const isImagenModel = model.modelName.toLowerCase().includes('imagen-');
   
   if (isImagenModel) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model.modelName}:generateImages`;
+    let url = `https://generativelanguage.googleapis.com/v1beta/models/${model.modelName}:generateImages`;
+    
+    if (model.baseUrl && model.baseUrl.trim()) {
+      const trimmedBaseUrl = model.baseUrl.trim();
+      if (trimmedBaseUrl.endsWith(':generateImages')) {
+        url = trimmedBaseUrl;
+      } else {
+        url = `${trimmedBaseUrl.replace(/\/+$/, '')}/models/${model.modelName}:generateImages`;
+      }
+    }
+
     const headers = {
       'Content-Type': 'application/json',
       'x-goog-api-key': model.apiKey,
     };
     const body = JSON.stringify({
       prompt: 'test connection',
-      numberOfImages: 1,
-      aspectRatio: '1:1',
+      config: {
+        numberOfImages: 1,
+        aspectRatio: '1:1',
+      }
     });
 
     if (window.electronAPI) {

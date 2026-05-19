@@ -28,7 +28,7 @@ function logToFile(level, message, error = null) {
 }
 
 function pickSafeHeaders(headers = {}) {
-  const allowedHeaders = ['content-type', 'authorization', 'accept'];
+  const allowedHeaders = ['content-type', 'authorization', 'accept', 'x-goog-api-key'];
   const safeHeaders = {};
 
   for (const [key, value] of Object.entries(headers)) {
