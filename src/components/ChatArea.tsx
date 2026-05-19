@@ -8,6 +8,7 @@ import { loadConfig } from '../services/configService';
 import type { useChatSession } from '../hooks/useChatSession';
 import type { AppConfig, Message } from '../shared/types';
 import { MarkdownMessage } from './MarkdownMessage';
+import { ThoughtBlock } from './ThoughtBlock';
 import './ChatArea.css';
 
 type ChatSession = ReturnType<typeof useChatSession>;
@@ -73,9 +74,19 @@ const MessageList = memo(function MessageList({
             className={`message-content ${message.role === 'assistant' ? 'glass' : 'user-bubble'}`}
             style={{ whiteSpace: message.role === 'assistant' ? 'normal' : 'pre-wrap' }}
           >
-            {message.role === 'assistant' ? (
-              <MarkdownMessage content={message.content} />
-            ) : (
+            {message.role === 'assistant' ? (() => {
+              const content = message.content;
+              const thinkRegex = /<think>([\s\S]*?)<\/think>|<thought>([\s\S]*?)<\/thought>/i;
+              const match = content.match(thinkRegex);
+              
+              if (match) {
+                const thought = (match[1] || match[2] || '').trim();
+                const response = content.replace(thinkRegex, '').trim();
+                return <ThoughtBlock thought={thought} response={response} />;
+              }
+
+              return <MarkdownMessage content={content} />;
+            })() : (
               message.content
             )}
           </div>
