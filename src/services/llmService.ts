@@ -57,6 +57,59 @@ export async function requestAssistantReply(
   const activeModel = getActiveModel(config);
   if (!activeModel?.apiKey) throw new Error('API Key no configurada.');
 
+  const isImagenModel = activeModel.modelName.toLowerCase().includes('imagen-');
+
+  if (isImagenModel) {
+    const modelName = activeModel.modelName;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateImages`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': activeModel.apiKey,
+    };
+    
+    const lastUserMessage = messages[messages.length - 1];
+    const promptText = lastUserMessage?.content || 'Genera una imagen creativa';
+
+    const body = JSON.stringify({
+      prompt: promptText,
+      numberOfImages: 1,
+      aspectRatio: '1:1',
+    });
+
+    let data;
+    if (window.electronAPI) {
+      const response = await window.electronAPI.invokeLLM(url, {
+        method: 'POST',
+        headers,
+        body,
+      });
+
+      if (!response.ok) {
+        throw new Error(response.error || `Error al generar imagen: ${response.status}`);
+      }
+      data = response.data;
+    } else {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        throw new Error(`Error al generar imagen: ${response.status} - ${errText}`);
+      }
+      data = await response.json();
+    }
+
+    const base64 = data?.generatedImages?.[0]?.image?.imageBytes;
+    if (!base64) {
+      throw new Error('La respuesta no contiene datos de imagen.');
+    }
+
+    return `Aquí tienes la imagen generada a partir de tu prompt:\n\n![Imagen Generada](data:image/png;base64,${base64})`;
+  }
+
   const maxTokens = activeModel.maxTokens || 1500;
   const temperature = activeModel.temperature ?? 0.7;
   const baseUrl = activeModel.baseUrl.replace(/\/+$/, '');
@@ -128,6 +181,53 @@ export async function requestAssistantReply(
 }
 
 export async function testModelConnection(model: ModelConfig): Promise<InvokeLLMResponse> {
+  const isImagenModel = model.modelName.toLowerCase().includes('imagen-');
+  
+  if (isImagenModel) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model.modelName}:generateImages`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': model.apiKey,
+    };
+    const body = JSON.stringify({
+      prompt: 'test connection',
+      numberOfImages: 1,
+      aspectRatio: '1:1',
+    });
+
+    if (window.electronAPI) {
+      return window.electronAPI.invokeLLM(url, {
+        method: 'POST',
+        headers,
+        body,
+      });
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body,
+      });
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          status: response.status,
+          error: await response.text(),
+        };
+      }
+
+      return {
+        ok: true,
+        data: await response.json(),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error de red desconocido.';
+      return { ok: false, status: 0, error: message };
+    }
+  }
+
   const baseUrl = model.baseUrl.trim().replace(/\/+$/, '');
   if (!baseUrl) {
     return { ok: false, status: 400, error: 'Base URL no configurada.' };
