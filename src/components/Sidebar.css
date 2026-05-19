@@ -51,6 +51,33 @@
   border-color: var(--border-focus);
 }
 
+.history-item.replying {
+  border-color: var(--border-focus);
+}
+
+.history-empty {
+  opacity: 0.5;
+  text-align: center;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.history-busy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.spin {
+  animation: sidebar-spin 0.8s linear infinite;
+}
+
+@keyframes sidebar-spin {
+  to { transform: rotate(360deg); }
+}
+
 .history-item-content {
   display: flex;
   gap: 12px;
@@ -95,26 +122,99 @@
 }
 
 .delete-btn {
-  position: absolute;
-  top: 12px;
-  right: 12px;
   background: rgba(239, 68, 68, 0.1);
   color: var(--accent-danger);
   border: none;
   padding: 6px;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.delete-btn:hover {
+  background: var(--accent-danger);
+  color: white;
+}
+
+.history-item.confirm-delete {
+  border-color: var(--accent-danger);
+}
+
+.delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.delete-confirm-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.delete-confirm-yes,
+.delete-confirm-no {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.delete-confirm-yes {
+  background: var(--accent-danger);
+  color: #fff;
+}
+
+.delete-confirm-no {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.edit-title-input {
+  width: 100%;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-focus);
+  border-radius: 4px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.history-actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 4px;
   opacity: 0;
   transform: scale(0.9);
   transition: all var(--transition-fast);
 }
 
-.history-item:hover .delete-btn {
+.history-item:hover .history-actions {
   opacity: 1;
   transform: scale(1);
 }
 
-.delete-btn:hover {
-  background: var(--accent-danger);
+.edit-btn {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--accent-primary);
+  border: none;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.edit-btn:hover {
+  background: var(--accent-primary);
   color: white;
 }

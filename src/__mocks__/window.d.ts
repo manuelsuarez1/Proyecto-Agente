@@ -1,4 +1,6 @@
-import type { Conversation, ConversationMeta, InvokeLLMOptions, InvokeLLMResponse, SearchResult } from './shared/types';
+import type { Conversation, ConversationMeta, InvokeLLMOptions, InvokeLLMResponse, SearchResult } from '../shared/types';
+
+export {};
 
 interface ElectronAPI {
   readDir: (dirPath: string) => Promise<string[]>;
@@ -22,5 +24,3 @@ declare global {
     electronAPI: ElectronAPI;
   }
 }
-
-export {};

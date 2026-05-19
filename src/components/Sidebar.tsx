@@ -1,109 +1,172 @@
-import React, { useState, useEffect } from 'react';
-import { PlusCircle, Trash2, MessageSquareText } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Loader2, MessageSquareText, Pencil, PlusCircle, Trash2 } from 'lucide-react';
+import type { useChatSession } from '../hooks/useChatSession';
 import './Sidebar.css';
 
+type ChatSession = ReturnType<typeof useChatSession>;
+
 interface SidebarProps {
-  currentConvId: string | null;
-  setCurrentConvId: (id: string | null) => void;
+  chat: ChatSession;
 }
 
-export interface ConversationMeta {
-  id: string;
-  title: string;
-  mode: string;
-  date: string;
-}
+export const Sidebar: React.FC<SidebarProps> = ({ chat }) => {
+  const {
+    history,
+    activeId,
+    isConversationReplyPending,
+    startNewChat,
+    selectChat,
+    removeChat,
+    renameChat,
+  } = chat;
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentConvId, setCurrentConvId }) => {
-  const [history, setHistory] = useState<ConversationMeta[]>([]);
-
-  const loadHistory = async () => {
-    try {
-      const files = await window.electronAPI.readDir('conversations');
-      const convs: ConversationMeta[] = [];
-      for (const file of files) {
-        if (file.endsWith('.json')) {
-          const content = await window.electronAPI.readFile(`conversations/${file}`);
-          if (content) {
-            try {
-              const parsed = JSON.parse(content);
-              convs.push({
-                id: parsed.id,
-                title: parsed.title || 'Untitled',
-                mode: parsed.mode || 'balanced',
-                date: parsed.date || ''
-              });
-            } catch(e) {
-              console.error("Invalid json in", file);
-            }
-          }
-        }
-      }
-      // Sort by descending ID assuming ID is timestamp
-      convs.sort((a, b) => b.id.localeCompare(a.id));
-      setHistory(convs);
-    } catch (err) {
-      console.error("Error loading history:", err);
-    }
-  };
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadHistory();
-    
-    // Set up a custom event listener to reload history when a chat is saved
-    const handleHistoryUpdate = () => loadHistory();
-    window.addEventListener('history-updated', handleHistoryUpdate);
-    return () => window.removeEventListener('history-updated', handleHistoryUpdate);
-  }, []);
+    if (editingId && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editingId]);
 
-  const handleNewChat = () => {
-    setCurrentConvId(null);
+  const handleDeleteClick = (event: React.MouseEvent, id: string) => {
+    event.stopPropagation();
+    setConfirmDeleteId(id);
   };
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (confirm("Are you sure you want to delete this conversation?")) {
-      await window.electronAPI.deleteFile(`conversations/${id}.json`);
-      if (currentConvId === id) {
-        setCurrentConvId(null);
-      }
-      loadHistory();
-    }
+  const confirmDelete = (event: React.MouseEvent, id: string) => {
+    event.stopPropagation();
+    setConfirmDeleteId(null);
+    removeChat(id);
+  };
+
+  const cancelDelete = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setConfirmDeleteId(null);
+  };
+
+  const saveEditTitle = async (id: string) => {
+    const newTitle = editTitle.trim();
+    setEditingId(null);
+    if (!newTitle) return;
+    await renameChat(id, newTitle);
   };
 
   return (
     <aside className="sidebar glass">
       <div className="sidebar-header">
-        <button className="btn btn-primary new-chat-btn" onClick={handleNewChat}>
+        <button
+          type="button"
+          className="btn btn-primary new-chat-btn"
+          onClick={startNewChat}
+        >
           <PlusCircle size={18} /> New Chat
         </button>
       </div>
+
       <div className="history-subtitle">Recent Conversations</div>
+
       <div className="history-list">
         {history.length === 0 && (
-           <div style={{opacity: 0.5, textAlign: 'center', marginTop: '1rem', fontSize: '0.85rem'}}>
-             No recent conversations
-           </div>
+          <p className="history-empty">No recent conversations</p>
         )}
+
         {history.map(conv => (
-          <div 
-            key={conv.id} 
-            className={`history-item ${currentConvId === conv.id ? 'active' : ''}`}
-            onClick={() => setCurrentConvId(conv.id)}
+          <div
+            key={conv.id}
+            role="button"
+            tabIndex={0}
+            className={`history-item ${activeId === conv.id ? 'active' : ''} ${isConversationReplyPending(conv.id) ? 'replying' : ''} ${confirmDeleteId === conv.id ? 'confirm-delete' : ''}`}
+            onClick={() => {
+              if (confirmDeleteId === conv.id) return;
+              void selectChat(conv.id);
+            }}
+            onKeyDown={event => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                if (confirmDeleteId === conv.id) return;
+                void selectChat(conv.id);
+              }
+            }}
           >
             <div className="history-item-content">
               <MessageSquareText size={16} className="history-icon" />
               <div className="history-info">
-                <span className="history-title">{conv.title}</span>
+                {editingId === conv.id ? (
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    className="edit-title-input"
+                    value={editTitle}
+                    onChange={event => setEditTitle(event.target.value)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter') void saveEditTitle(conv.id);
+                      if (event.key === 'Escape') setEditingId(null);
+                    }}
+                    onBlur={() => void saveEditTitle(conv.id)}
+                    onClick={event => event.stopPropagation()}
+                  />
+                ) : (
+                  <span className="history-title">{conv.title}</span>
+                )}
                 <div className="history-meta">
                   <span className="date">{conv.date}</span>
-                  <span className={`badge badge-${conv.mode}`}>{conv.mode}</span>
                 </div>
               </div>
             </div>
-            <button className="delete-btn" title="Delete conversation" onClick={(e) => handleDelete(e, conv.id)}>
-              <Trash2 size={14} />
-            </button>
+
+            <div className="history-actions">
+              {confirmDeleteId === conv.id ? (
+                <div className="delete-confirm" onClick={event => event.stopPropagation()}>
+                  <span className="delete-confirm-label">¿Eliminar?</span>
+                  <button
+                    type="button"
+                    className="delete-confirm-yes"
+                    onClick={event => confirmDelete(event, conv.id)}
+                  >
+                    Sí
+                  </button>
+                  <button
+                    type="button"
+                    className="delete-confirm-no"
+                    onClick={cancelDelete}
+                  >
+                    No
+                  </button>
+                </div>
+              ) : isConversationReplyPending(conv.id) ? (
+                <span className="history-busy" aria-label="Esperando respuesta">
+                  <Loader2 size={14} className="spin" />
+                </span>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="edit-btn"
+                    title="Edit title"
+                    onClick={event => {
+                      event.stopPropagation();
+                      setConfirmDeleteId(null);
+                      setEditingId(conv.id);
+                      setEditTitle(conv.title);
+                    }}
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="delete-btn"
+                    title="Delete conversation"
+                    onClick={event => handleDeleteClick(event, conv.id)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         ))}
       </div>

@@ -1,280 +1,258 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Sparkles } from 'lucide-react';
+import React, { memo, useEffect, useRef, useState } from 'react';
+import { Bot, Search, Send, Sparkles, User } from 'lucide-react';
+import {
+  buildSearchContext,
+  needsWebSearch,
+  requestAssistantReply,
+} from '../services/llmService';
+import { loadConfig } from '../services/configService';
+import type { useChatSession } from '../hooks/useChatSession';
+import type { AppConfig, Message } from '../shared/types';
+import { MarkdownMessage } from './MarkdownMessage';
 import './ChatArea.css';
 
+type ChatSession = ReturnType<typeof useChatSession>;
+
 interface ChatAreaProps {
-  currentConvId: string | null;
-  setCurrentConvId: (id: string | null) => void;
+  chat: ChatSession;
 }
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
+type ReplyStatus = 'idle' | 'searching' | 'thinking';
 
-interface Conversation {
-  id: string;
-  title: string;
-  mode: string;
-  date: string;
+interface MessageListProps {
   messages: Message[];
+  replyStatus: ReplyStatus;
+  isLoadingChat: boolean;
+  showReplyPending: boolean;
 }
 
-export const ChatArea: React.FC<ChatAreaProps> = ({ currentConvId, setCurrentConvId }) => {
+const MessageList = memo(function MessageList({
+  messages,
+  replyStatus,
+  isLoadingChat,
+  showReplyPending,
+}: MessageListProps) {
+  const endRef = useRef<HTMLDivElement>(null);
+  const visibleMessages = messages.filter(message => message.role !== 'system');
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [visibleMessages, replyStatus, isLoadingChat, showReplyPending]);
+
+  if (isLoadingChat) {
+    return (
+      <div className="messages-container">
+        <div className="empty-state">
+          <LoaderPlaceholder />
+        </div>
+      </div>
+    );
+  }
+
+  if (visibleMessages.length === 0) {
+    return (
+      <div className="messages-container">
+        <div className="empty-state">
+          <Sparkles size={48} className="empty-icon" />
+          <h3>How can I help you today?</h3>
+          <p>Type below to start a new conversation.</p>
+        </div>
+        <div ref={endRef} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="messages-container">
+      {visibleMessages.map((message, index) => (
+        <div
+          key={`${message.role}-${index}-${message.content.slice(0, 24)}`}
+          className={`message-wrapper ${message.role}`}
+        >
+          {message.role === 'assistant' && <div className="avatar"><Bot size={20} /></div>}
+          <div
+            className={`message-content ${message.role === 'assistant' ? 'glass' : 'user-bubble'}`}
+            style={{ whiteSpace: message.role === 'assistant' ? 'normal' : 'pre-wrap' }}
+          >
+            {message.role === 'assistant' ? (
+              <MarkdownMessage content={message.content} />
+            ) : (
+              message.content
+            )}
+          </div>
+          {message.role === 'user' && <div className="avatar"><User size={20} /></div>}
+        </div>
+      ))}
+
+      {replyStatus === 'searching' && (
+        <div className="message-wrapper assistant">
+          <div className="avatar"><Bot size={20} /></div>
+          <div className="message-content glass status-indicator">
+            <Search size={16} /> Buscando información en tiempo real...
+          </div>
+        </div>
+      )}
+
+      {(replyStatus === 'thinking' || (showReplyPending && replyStatus !== 'searching')) && (
+        <div className="message-wrapper assistant">
+          <div className="avatar"><Bot size={20} /></div>
+          <div className="message-content glass typing-indicator">
+            <span className="dot">.</span><span className="dot">.</span><span className="dot">.</span>
+          </div>
+        </div>
+      )}
+      <div ref={endRef} />
+    </div>
+  );
+});
+
+function LoaderPlaceholder() {
+  return <p className="loading-chat">Cargando conversación...</p>;
+}
+
+export const ChatArea: React.FC<ChatAreaProps> = ({ chat }) => {
+  const {
+    activeId,
+    messages,
+    isLoadingChat,
+    isReplyPending,
+    isNewChat,
+    activeModelId,
+    setChatModelId,
+    chatError,
+    sendUserMessage,
+    setChatError,
+  } = chat;
+
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [mode, setMode] = useState('balanced');
-  const [isLoading, setIsLoading] = useState(false);
-  const [config, setConfig] = useState<any>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [replyStatus, setReplyStatus] = useState<ReplyStatus>('idle');
 
   useEffect(() => {
-    if (currentConvId) {
-      loadConversation(currentConvId);
-    } else {
-      setMessages([]);
-    }
-  }, [currentConvId]);
+    let cancelled = false;
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  useEffect(() => {
-    const loadConfig = async () => {
+    async function syncConfig() {
       try {
-        const configContent = await window.electronAPI.readFile('config.json');
-        if (configContent) {
-          setConfig(JSON.parse(configContent));
-        }
+        const nextConfig = await loadConfig();
+        if (!cancelled) setConfig(nextConfig);
       } catch (err) {
-        console.error('Error loading config:', err);
-      }
-    };
-    loadConfig();
-
-    const handleConfigUpdate = () => {
-      loadConfig();
-    };
-    window.addEventListener('config-updated', handleConfigUpdate);
-    return () => window.removeEventListener('config-updated', handleConfigUpdate);
-  }, []);
-
-  const loadConversation = async (id: string) => {
-    try {
-      const content = await window.electronAPI.readFile(`conversations/${id}.json`);
-      if (content) {
-        const conv: Conversation = JSON.parse(content);
-        setMessages(conv.messages || []);
-        setMode(conv.mode || 'balanced');
-      }
-    } catch (err) {
-      console.error("Error loading conversation:", err);
-    }
-  };
-
-  const saveConversation = async (id: string, msgs: Message[], currentMode: string) => {
-    try {
-      const title = msgs.length > 0 ? msgs[0].content.substring(0, 30) + '...' : 'New Conversation';
-      const conv: Conversation = {
-        id,
-        title,
-        mode: currentMode,
-        date: new Date().toLocaleDateString(),
-        messages: msgs
-      };
-      await window.electronAPI.writeFile(`conversations/${id}.json`, JSON.stringify(conv, null, 2));
-      window.dispatchEvent(new Event('history-updated'));
-    } catch (err) {
-      console.error("Error saving conversation:", err);
-    }
-  };
-
-  const fetchLLMResponse = async (userMessages: Message[]) => {
-    try {
-      const configStr = await window.electronAPI.readFile('config.json');
-      const loadedConfig = configStr ? JSON.parse(configStr) : null;
-      
-      let activeModel = loadedConfig;
-      if (loadedConfig && loadedConfig.models) {
-        activeModel = loadedConfig.models.find((m: any) => m.id === loadedConfig.activeModelId) || loadedConfig.models[0];
-      }
-      
-      if (!activeModel || !activeModel.apiKey) {
-        throw new Error("API Key not configured. Please check Settings.");
-      }
-
-      // Read active skills content
-      let systemContent = "You are a helpful AI assistant.";
-      try {
-        const files = await window.electronAPI.readDir('skills');
-        // Currently we just include all skills as context, we can optimize this later
-        const skillsContent = [];
-        for (const f of files) {
-          if (f.endsWith('.md') || f.endsWith('.txt')) {
-             const skillText = await window.electronAPI.readFile(`skills/${f}`);
-             if (skillText) skillsContent.push(skillText);
-          }
+        if (!cancelled) {
+          console.error('Error loading config:', err);
+          setChatError('No se pudo cargar la configuración.');
         }
-        if (skillsContent.length > 0) {
-          systemContent += "\n\nFollow these specific instructions (Skills):\n" + skillsContent.join('\n\n---\n\n');
-        }
-      } catch (err) {
-        console.error("Failed to load skills context", err);
       }
-
-      const apiMessages = [
-        { role: 'system', content: systemContent },
-        ...userMessages
-      ];
-
-      const baseUrlCleaned = activeModel.baseUrl.replace(/\/+$/, '');
-      const response = await fetch(`${baseUrlCleaned}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${activeModel.apiKey}`
-        },
-        body: JSON.stringify({
-          model: activeModel.modelName || 'gpt-4o-mini',
-          messages: apiMessages,
-          temperature: activeModel.temperature || 0.7,
-          max_tokens: activeModel.maxTokens || 1500
-        })
-      });
-
-      if (!response.ok) {
-        const err = await response.text();
-        throw new Error(`API Error: ${response.status} - ${err}`);
-      }
-
-      const data = await response.json();
-      return data.choices[0].message.content;
-    } catch (error: any) {
-      console.error(error);
-      return `Error: ${error.message}`;
     }
-  };
+
+    void syncConfig();
+    const onUpdate = () => { void syncConfig(); };
+    window.addEventListener('config-updated', onUpdate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('config-updated', onUpdate);
+    };
+  }, [setChatError]);
+
+  const [prevActiveId, setPrevActiveId] = useState(activeId);
+  if (activeId !== prevActiveId) {
+    setPrevActiveId(activeId);
+    setReplyStatus('idle');
+  }
+
+  const selectedModelId = config?.models.some(item => item.id === activeModelId)
+    ? activeModelId
+    : (config?.models[0]?.id ?? activeModelId);
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-    
-    const userMsg: Message = { role: 'user', content: input.trim() };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
+    if (!input.trim() || isReplyPending || isLoadingChat) return;
+    if (!config) {
+      setChatError('Configuración no cargada.');
+      return;
+    }
+
+    const content = input.trim();
     setInput('');
-    setIsLoading(true);
+    setReplyStatus('idle');
 
-    let convId = currentConvId;
-    if (!convId) {
-      convId = Date.now().toString();
-      setCurrentConvId(convId);
-    }
+    await sendUserMessage(content, async (userMessages) => {
+      const lastMessage = userMessages[userMessages.length - 1];
+      let searchContext: Message | null = null;
 
-    await saveConversation(convId, newMessages, mode);
+      if (lastMessage?.role === 'user' && needsWebSearch(lastMessage.content)) {
+        setReplyStatus('searching');
+        if (window.electronAPI) {
+          const results = await window.electronAPI.performSearch(lastMessage.content);
+          searchContext = buildSearchContext(results);
+        } else {
+          searchContext = {
+            role: 'system',
+            content: 'La búsqueda web automática no está disponible en la vista de navegador.',
+          };
+        }
+      }
 
-    const assistantText = await fetchLLMResponse(newMessages);
-    const finalMessages: Message[] = [...newMessages, { role: 'assistant', content: assistantText }];
-    setMessages(finalMessages);
-    
-    await saveConversation(convId, finalMessages, mode);
-    setIsLoading(false);
+      setReplyStatus('thinking');
+      const replyConfig = { ...config, activeModelId: selectedModelId };
+      return requestAssistantReply(replyConfig, userMessages, searchContext);
+    });
   };
 
-  const handleModelChange = async (newModelId: string) => {
-    if (!config) return;
-    const newConfig = { ...config, activeModelId: newModelId };
-    setConfig(newConfig);
-    await window.electronAPI.writeFile('config.json', JSON.stringify(newConfig, null, 2));
-    window.dispatchEvent(new Event('config-updated'));
+  const handleModelChange = (modelId: string) => {
+    setChatModelId(modelId);
   };
 
-  const getActiveModelAlias = () => {
-    if (!config) return 'AI Assistant';
-    if (config.models) {
-      const m = config.models.find((m: any) => m.id === config.activeModelId);
-      return m ? m.modelAlias : 'AI Assistant';
-    }
-    return config.modelAlias || 'AI Assistant';
-  };
+  const activeAlias = config?.models.find(item => item.id === selectedModelId)?.modelAlias || 'AI Assistant';
+  const canSend = Boolean(input.trim()) && !isReplyPending && !isLoadingChat;
 
   return (
     <main className="chat-area">
       <div className="chat-header glass">
-        <div className="chat-title-group" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {config && config.models && config.models.length > 0 ? (
-            <select 
-              className="input-field" 
-              value={config.activeModelId || ''} 
-              onChange={(e) => handleModelChange(e.target.value)}
-              style={{ padding: '6px 12px', fontSize: '1rem', fontWeight: 'bold' }}
+        <div className="chat-title-group">
+          {isNewChat && <span className="new-chat-badge">NEW</span>}
+          {config?.models.length ? (
+            <select
+              className="input-field model-select"
+              value={selectedModelId}
+              onChange={event => handleModelChange(event.target.value)}
             >
-              {config.models.map((m: any) => (
-                <option key={m.id} value={m.id}>{m.modelAlias || m.modelName}</option>
+              {config.models.map(model => (
+                <option key={model.id} value={model.id}>{model.modelAlias || model.modelName}</option>
               ))}
             </select>
           ) : (
-            <h2>{getActiveModelAlias()}</h2>
+            <h2>{activeAlias}</h2>
           )}
-        </div>
-        
-        <div className="mode-selector">
-          <label>Mode:</label>
-          <select className="input-field" value={mode} onChange={(e) => setMode(e.target.value)}>
-            <option value="fast">⚡ Fast</option>
-            <option value="balanced">⚖️ Balanced</option>
-            <option value="thinking">🤔 Thinking</option>
-          </select>
         </div>
       </div>
 
-      <div className="messages-container">
-        {messages.length === 0 ? (
-          <div className="empty-state">
-            <Sparkles size={48} className="empty-icon" />
-            <h3>How can I help you today?</h3>
-            <p>Type below to start a new conversation.</p>
-          </div>
-        ) : (
-          messages.map((msg, index) => (
-            <div key={index} className={`message-wrapper ${msg.role}`}>
-              {msg.role === 'assistant' && <div className="avatar"><Bot size={20} /></div>}
-              <div className={`message-content ${msg.role === 'assistant' ? 'glass' : 'user-bubble'}`} style={{ whiteSpace: 'pre-wrap' }}>
-                {msg.content}
-              </div>
-              {msg.role === 'user' && <div className="avatar"><User size={20} /></div>}
-            </div>
-          ))
-        )}
-        {isLoading && (
-          <div className="message-wrapper assistant">
-            <div className="avatar"><Bot size={20} /></div>
-            <div className="message-content glass typing-indicator" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-              <span className="dot">.</span><span className="dot">.</span><span className="dot">.</span>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+      {chatError && <div className="chat-error">{chatError}</div>}
+      <MessageList
+        messages={messages}
+        replyStatus={replyStatus}
+        isLoadingChat={isLoadingChat}
+        showReplyPending={isReplyPending}
+      />
 
       <div className="input-area glass">
         <div className="input-wrapper">
-          <textarea 
+          <textarea
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={event => setInput(event.target.value)}
             placeholder="Type your message... (Shift + Enter for new line)"
             rows={1}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
+            disabled={isReplyPending || isLoadingChat}
+            style={{ maxHeight: '200px', overflowY: 'auto' }}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void handleSend();
               }
             }}
           />
-          <button 
-            className="btn btn-primary send-btn" 
-            onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+          <button
+            type="button"
+            className="btn btn-primary send-btn"
+            onClick={() => void handleSend()}
+            disabled={!canSend}
           >
             <Send size={18} />
           </button>

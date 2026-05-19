@@ -1,97 +1,55 @@
-import React, { useState, useEffect } from 'react';
-import { Save, RefreshCcw, Cpu, Key, Zap, Brain, Scale, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Cpu, Eye, EyeOff, Plus, RefreshCcw, Save, Trash2, Zap } from 'lucide-react';
+import { ConfigPersistenceError, isEncryptionAvailable, loadConfig, saveConfig } from '../services/configService';
+import { testModelConnection } from '../services/llmService';
+import { DEFAULT_APP_CONFIG, DEFAULT_MODEL } from '../shared/configDefaults';
+import type { AppConfig, ModelConfig } from '../shared/types';
 import './Settings.css';
-
-export interface ModelConfig {
-  id: string;
-  baseUrl: string;
-  apiKey: string;
-  modelName: string;
-  modelAlias: string;
-  temperature: number;
-  maxTokens: number;
-}
-
-export interface AppConfig {
-  activeModelId: string;
-  models: ModelConfig[];
-  globalMode: string;
-}
-
-const DEFAULT_MODEL: ModelConfig = {
-  id: 'default',
-  baseUrl: 'https://api.openai.com/v1',
-  apiKey: '',
-  modelName: 'gpt-4o-mini',
-  modelAlias: 'AgentX Assistant',
-  temperature: 0.7,
-  maxTokens: 1500,
-};
-
-const DEFAULT_APP_CONFIG: AppConfig = {
-  activeModelId: 'default',
-  models: [DEFAULT_MODEL],
-  globalMode: 'balanced',
-};
 
 export const Settings: React.FC = () => {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG);
   const [editingModelId, setEditingModelId] = useState<string>('default');
   const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
-  const [testMessage, setTestMessage] = useState<{text: string, type: 'success' | 'error' | 'info' | ''}>({text: '', type: ''});
+  const [testMessage, setTestMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' | '' }>({ text: '', type: '' });
   const [showApiKey, setShowApiKey] = useState(false);
+  const [encryptionAvailable, setEncryptionAvailable] = useState(true);
 
   useEffect(() => {
-    const loadConfig = async () => {
+    let cancelled = false;
+
+    async function syncConfig() {
       try {
-        const fileContent = await window.electronAPI.readFile('config.json');
-        if (fileContent) {
-          const parsed = JSON.parse(fileContent);
-          if (parsed.models) {
-            setConfig({ ...DEFAULT_APP_CONFIG, ...parsed });
-            setEditingModelId(parsed.activeModelId || parsed.models[0]?.id || 'default');
-          } else {
-            // Migrate old config format
-            const migratedModel: ModelConfig = {
-              id: 'default',
-              baseUrl: parsed.baseUrl || 'https://api.openai.com/v1',
-              apiKey: parsed.apiKey || '',
-              modelName: parsed.modelName || 'gpt-4o-mini',
-              modelAlias: parsed.modelAlias || 'AgentX Assistant',
-              temperature: parsed.temperature ?? 0.7,
-              maxTokens: parsed.maxTokens ?? 1500,
-            };
-            const newConfig: AppConfig = {
-              activeModelId: 'default',
-              models: [migratedModel],
-              globalMode: parsed.globalMode || 'balanced',
-            };
-            setConfig(newConfig);
-            setEditingModelId('default');
-          }
-        }
+        const [nextConfig, canEncrypt] = await Promise.all([
+          loadConfig(),
+          isEncryptionAvailable(),
+        ]);
+        if (cancelled) return;
+        setConfig(nextConfig);
+        setEncryptionAvailable(canEncrypt);
+        setEditingModelId(nextConfig.activeModelId || nextConfig.models[0]?.id || 'default');
       } catch (err) {
-        console.error("Failed to load config:", err);
+        console.error('Failed to load config:', err);
+        if (!cancelled && err instanceof ConfigPersistenceError) {
+          setSaveMessage(err.message);
+        }
       }
-    };
-    loadConfig();
+    }
+
+    void syncConfig();
+    return () => { cancelled = true; };
   }, []);
 
-  const handleGlobalChange = (key: keyof AppConfig, value: any) => {
+  const handleGlobalChange = <K extends keyof AppConfig>(key: K, value: AppConfig[K]) => {
     setConfig(prev => ({ ...prev, [key]: value }));
   };
 
   const handleModelChange = (key: keyof ModelConfig, value: string | number) => {
-    setConfig(prev => {
-      const updatedModels = prev.models.map(m => {
-        if (m.id === editingModelId) {
-          return { ...m, [key]: value };
-        }
-        return m;
-      });
-      return { ...prev, models: updatedModels };
-    });
+    setConfig(prev => ({
+      ...prev,
+      models: prev.models.map(model => model.id === editingModelId ? { ...model, [key]: value } : model),
+    }));
   };
 
   const handleAddModel = () => {
@@ -99,152 +57,146 @@ export const Settings: React.FC = () => {
     const newModel: ModelConfig = {
       ...DEFAULT_MODEL,
       id: newId,
-      modelAlias: 'New Model'
+      modelAlias: 'New Model',
     };
     setConfig(prev => ({
       ...prev,
       models: [...prev.models, newModel],
-      activeModelId: newId
+      activeModelId: newId,
     }));
     setEditingModelId(newId);
   };
 
   const handleDeleteModel = (id: string) => {
     if (config.models.length <= 1) {
-      alert("You must have at least one model configured.");
+      alert('You must have at least one model configured.');
       return;
     }
-    if (confirm("Are you sure you want to delete this model configuration?")) {
-      setConfig(prev => {
-        const remainingModels = prev.models.filter(m => m.id !== id);
-        const newActiveId = prev.activeModelId === id ? remainingModels[0].id : prev.activeModelId;
-        setEditingModelId(newActiveId);
-        return {
-          ...prev,
-          models: remainingModels,
-          activeModelId: newActiveId
-        };
-      });
-    }
+
+    if (!confirm('Are you sure you want to delete this model configuration?')) return;
+
+    setConfig(prev => {
+      const remainingModels = prev.models.filter(model => model.id !== id);
+      const newActiveId = prev.activeModelId === id ? remainingModels[0].id : prev.activeModelId;
+      setEditingModelId(newActiveId);
+      return {
+        ...prev,
+        models: remainingModels,
+        activeModelId: newActiveId,
+      };
+    });
   };
 
   const handleSave = async () => {
     setIsSaving(true);
     setSaveMessage('');
+
     try {
-      const success = await window.electronAPI.writeFile('config.json', JSON.stringify(config, null, 2));
+      const success = await saveConfig(config);
       if (success) {
-        setSaveMessage('Settings saved successfully!');
+        setSaveMessage('Configuración guardada de forma segura.');
         window.dispatchEvent(new Event('config-updated'));
       } else {
-        setSaveMessage('Failed to save settings.');
+        setSaveMessage('Error al guardar la configuración.');
       }
-    } catch {
-      setSaveMessage('Error saving settings.');
+    } catch (err) {
+      console.error('Error saving settings:', err);
+      setSaveMessage(
+        err instanceof ConfigPersistenceError
+          ? err.message
+          : 'Error al procesar la configuración.',
+      );
+    } finally {
+      setIsSaving(false);
+      window.setTimeout(() => setSaveMessage(''), 3000);
     }
-    setIsSaving(false);
-    setTimeout(() => setSaveMessage(''), 3000);
   };
 
   const handleTestConnection = async () => {
+    if (isTesting) return;
+
+    setIsTesting(true);
     setTestMessage({ text: 'Testing connection...', type: 'info' });
-    const editingModel = config.models.find(m => m.id === editingModelId);
-    if (!editingModel) return;
+    const editingModel = config.models.find(model => model.id === editingModelId);
+    if (!editingModel) {
+      setIsTesting(false);
+      return;
+    }
 
     try {
-      const baseUrlCleaned = editingModel.baseUrl.replace(/\/+$/, '');
-      const response = await fetch(`${baseUrlCleaned}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${editingModel.apiKey}`
-        },
-        body: JSON.stringify({
-          model: editingModel.modelName,
-          messages: [{ role: 'user', content: 'Ping' }],
-          max_tokens: 1
-        })
-      });
+      const response = await testModelConnection(editingModel);
 
       if (response.ok) {
         setTestMessage({ text: 'Connection successful!', type: 'success' });
       } else {
-        const errText = await response.text();
-        setTestMessage({ text: `Failed: ${response.status} - ${errText.substring(0, 50)}`, type: 'error' });
+        const detail = String(response.error || 'Connection failed').replace(/\s+/g, ' ').substring(0, 160);
+        setTestMessage({ text: `Failed${response.status ? ` ${response.status}` : ''}: ${detail}`, type: 'error' });
       }
-    } catch (err: any) {
-      setTestMessage({ text: `Error: ${err.message}`, type: 'error' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setTestMessage({ text: `Error: ${message}`, type: 'error' });
+    } finally {
+      setIsTesting(false);
     }
-    setTimeout(() => setTestMessage({text: '', type: ''}), 5000);
+
+    window.setTimeout(() => setTestMessage({ text: '', type: '' }), 5000);
   };
 
   const handleReset = () => {
-    if (confirm("Are you sure you want to reset all settings to default?")) {
+    if (confirm('Are you sure you want to reset all settings to default?')) {
       setConfig(DEFAULT_APP_CONFIG);
       setEditingModelId('default');
     }
   };
 
-  const currentModel = config.models.find(m => m.id === editingModelId) || DEFAULT_MODEL;
+  const currentModel = config.models.find(model => model.id === editingModelId) || DEFAULT_MODEL;
 
   return (
     <div className="settings-view">
       <div className="settings-container">
-        
+        {!encryptionAvailable && window.electronAPI && (
+          <p className="settings-warning glass">
+            El cifrado del sistema operativo no está disponible. Las API keys no se guardarán hasta que esté activo.
+          </p>
+        )}
+
         <section className="settings-section glass">
-          <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="section-header settings-section-header">
+            <div className="section-title">
               <Cpu className="section-icon" />
               <h3>AI Models</h3>
             </div>
-            <button className="btn btn-ghost" onClick={handleAddModel} style={{ padding: '4px 8px', height: 'auto', minHeight: '30px' }}>
-              <Plus size={16} style={{marginRight: '4px'}}/> Add Model
+            <button className="btn btn-ghost compact-btn" onClick={handleAddModel}>
+              <Plus size={16} /> Add Model
             </button>
           </div>
-          <div className="models-list" style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '12px', marginBottom: '12px' }}>
+
+          <div className="models-list">
             {config.models.map(model => (
-              <div 
+              <button
                 key={model.id}
+                type="button"
                 className={`model-pill ${editingModelId === model.id ? 'active' : ''}`}
                 onClick={() => setEditingModelId(model.id)}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '16px',
-                  background: editingModelId === model.id ? 'var(--primary-color)' : 'var(--bg-secondary)',
-                  color: editingModelId === model.id ? '#fff' : 'var(--text-color)',
-                  cursor: 'pointer',
-                  border: '1px solid var(--border-color)',
-                  whiteSpace: 'nowrap',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
               >
                 {model.modelAlias}
-                {config.activeModelId === model.id && (
-                  <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.2)', padding: '2px 6px', borderRadius: '8px' }}>Active</span>
-                )}
-              </div>
+                {config.activeModelId === model.id && <span>Active</span>}
+              </button>
             ))}
           </div>
-          
-          <div className="form-group" style={{ marginBottom: '24px', padding: '12px', background: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h4 style={{ margin: 0, color: 'var(--text-color)' }}>Editing: {currentModel.modelAlias}</h4>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button 
-                  className="btn btn-ghost" 
+
+          <div className="model-editor">
+            <div className="model-editor-header">
+              <h4>Editing: {currentModel.modelAlias}</h4>
+              <div className="model-actions">
+                <button
+                  className="btn btn-ghost compact-btn"
                   onClick={() => handleGlobalChange('activeModelId', currentModel.id)}
                   disabled={config.activeModelId === currentModel.id}
-                  style={{ padding: '4px 12px', minHeight: '32px' }}
                 >
                   Set as Active
                 </button>
-                <button 
-                  className="btn btn-ghost" 
-                  onClick={() => handleDeleteModel(currentModel.id)}
-                  style={{ padding: '4px 12px', minHeight: '32px', color: '#f87171' }}
-                >
+                <button className="btn btn-ghost compact-btn danger-btn" onClick={() => handleDeleteModel(currentModel.id)}>
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -252,41 +204,37 @@ export const Settings: React.FC = () => {
 
             <div className="form-group">
               <label>Model Alias (Displayed in App)</label>
-              <input 
-                type="text" 
-                className="input-field" 
-                placeholder="E.g., My Personal Assistant" 
+              <input
+                type="text"
+                className="input-field"
+                placeholder="E.g., My Personal Assistant"
                 value={currentModel.modelAlias || ''}
-                onChange={(e) => handleModelChange('modelAlias', e.target.value)}
+                onChange={event => handleModelChange('modelAlias', event.target.value)}
               />
             </div>
 
             <div className="form-group">
               <label>Base URL</label>
-              <input 
-                type="text" 
-                className="input-field" 
-                placeholder="https://api.openai.com/v1" 
+              <input
+                type="text"
+                className="input-field"
+                placeholder="https://api.openai.com/v1"
                 value={currentModel.baseUrl}
-                onChange={(e) => handleModelChange('baseUrl', e.target.value)}
+                onChange={event => handleModelChange('baseUrl', event.target.value)}
               />
             </div>
-            
+
             <div className="form-group">
               <label>API Key</label>
               <div className="password-input-wrapper">
-                <input 
-                  type={showApiKey ? "text" : "password"} 
-                  className="input-field" 
-                  placeholder="sk-..." 
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  className="input-field"
+                  placeholder="sk-..."
                   value={currentModel.apiKey}
-                  onChange={(e) => handleModelChange('apiKey', e.target.value)}
+                  onChange={event => handleModelChange('apiKey', event.target.value)}
                 />
-                <button 
-                  type="button" 
-                  className="password-toggle-btn"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                >
+                <button type="button" className="password-toggle-btn" onClick={() => setShowApiKey(!showApiKey)}>
                   {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
@@ -294,12 +242,23 @@ export const Settings: React.FC = () => {
 
             <div className="form-group">
               <label>Model Name</label>
-              <input 
-                type="text" 
-                className="input-field" 
-                placeholder="gpt-4o-mini" 
+              <input
+                type="text"
+                className="input-field"
+                placeholder="gpt-4o-mini"
                 value={currentModel.modelName}
-                onChange={(e) => handleModelChange('modelName', e.target.value)}
+                onChange={event => handleModelChange('modelName', event.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Instrucción del Sistema (System Prompt)</label>
+              <textarea
+                className="input-field textarea-field"
+                rows={3}
+                placeholder="Eres un asistente de IA útil, inteligente y creativo. Responde siempre en español con claridad, proporcionando ejemplos cuando sea necesario."
+                value={currentModel.systemPrompt || ''}
+                onChange={event => handleModelChange('systemPrompt', event.target.value)}
               />
             </div>
 
@@ -308,26 +267,26 @@ export const Settings: React.FC = () => {
                 <label>Temperature</label>
                 <span className="slider-value">{currentModel.temperature}</span>
               </div>
-              <input 
-                type="range" 
-                className="range-slider" 
-                min="0" 
-                max="2" 
-                step="0.1" 
+              <input
+                type="range"
+                className="range-slider"
+                min="0"
+                max="2"
+                step="0.1"
                 value={currentModel.temperature}
-                onChange={(e) => handleModelChange('temperature', parseFloat(e.target.value))}
+                onChange={event => handleModelChange('temperature', Number.parseFloat(event.target.value))}
               />
             </div>
 
             <div className="form-group">
               <label>Max Tokens</label>
-              <input 
-                type="number" 
-                className="input-field" 
-                min="100" 
-                step="100" 
+              <input
+                type="number"
+                className="input-field"
+                min="100"
+                step="100"
                 value={currentModel.maxTokens}
-                onChange={(e) => handleModelChange('maxTokens', parseInt(e.target.value, 10))}
+                onChange={event => handleModelChange('maxTokens', Number.parseInt(event.target.value, 10))}
               />
             </div>
           </div>
@@ -335,72 +294,29 @@ export const Settings: React.FC = () => {
 
         <section className="settings-section glass">
           <div className="section-header">
-            <Brain className="section-icon" />
-            <h3>Global Preferences</h3>
+            <h3>Búsqueda web</h3>
           </div>
-          
-          <div className="form-group">
-            <label>Default Response Mode</label>
-            <div className="mode-cards">
-              <label className={`mode-card ${config.globalMode === 'fast' ? 'active' : ''}`}>
-                <input 
-                  type="radio" 
-                  name="global_mode" 
-                  value="fast" 
-                  checked={config.globalMode === 'fast'}
-                  onChange={(e) => handleGlobalChange('globalMode', e.target.value)}
-                />
-                <Zap size={24} className="mode-icon fast" />
-                <div className="mode-label">Fast</div>
-                <div className="mode-desc">Concise and direct</div>
-              </label>
-              <label className={`mode-card ${config.globalMode === 'balanced' ? 'active' : ''}`}>
-                <input 
-                  type="radio" 
-                  name="global_mode" 
-                  value="balanced" 
-                  checked={config.globalMode === 'balanced'}
-                  onChange={(e) => handleGlobalChange('globalMode', e.target.value)}
-                />
-                <Scale size={24} className="mode-icon balanced" />
-                <div className="mode-label">Balanced</div>
-                <div className="mode-desc">Well-rounded answers</div>
-              </label>
-              <label className={`mode-card ${config.globalMode === 'thinking' ? 'active' : ''}`}>
-                <input 
-                  type="radio" 
-                  name="global_mode" 
-                  value="thinking" 
-                  checked={config.globalMode === 'thinking'}
-                  onChange={(e) => handleGlobalChange('globalMode', e.target.value)}
-                />
-                <Brain size={24} className="mode-icon thinking" />
-                <div className="mode-label">Thinking</div>
-                <div className="mode-desc">Deep reasoning</div>
-              </label>
-            </div>
-          </div>
+
+          <p className="settings-hint">
+            La búsqueda web usa Google Noticias para actualidad y DuckDuckGo para consultas generales (documentación, definiciones, guías).
+          </p>
         </section>
 
         <div className="settings-actions">
-          {saveMessage && <span className="save-message" style={{marginRight: '1rem', color: '#4ade80'}}>{saveMessage}</span>}
-          {testMessage.text && (
-            <span className={`save-message ${testMessage.type}`} style={{marginRight: '1rem', color: testMessage.type === 'error' ? '#f87171' : testMessage.type === 'success' ? '#4ade80' : '#94a3b8'}}>
-              {testMessage.text}
-            </span>
-          )}
-          <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
+          {saveMessage && <span className="save-message success">{saveMessage}</span>}
+          {testMessage.text && <span className={`save-message ${testMessage.type}`}>{testMessage.text}</span>}
+          <button className="btn btn-primary" onClick={() => void handleSave()} disabled={isSaving}>
             <Save size={18} /> {isSaving ? 'Saving...' : 'Save Settings'}
           </button>
-          <button className="btn btn-ghost" onClick={handleTestConnection}>
-            <Zap size={18} /> Test Connection
+          <button className="btn btn-ghost" onClick={() => void handleTestConnection()} disabled={isTesting}>
+            <Zap size={18} /> {isTesting ? 'Testing...' : 'Test Connection'}
           </button>
           <button className="btn btn-ghost" onClick={handleReset}>
             <RefreshCcw size={18} /> Reset Defaults
           </button>
         </div>
-
       </div>
     </div>
   );
 };
+

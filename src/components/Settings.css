@@ -13,6 +13,25 @@
   gap: 2rem;
 }
 
+.settings-warning {
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-md);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.settings-hint {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
 .settings-section {
   padding: 2rem;
   border-radius: var(--radius-lg);
@@ -24,6 +43,17 @@
   gap: 12px;
   margin-bottom: 1.5rem;
   color: var(--text-primary);
+}
+
+.settings-section-header {
+  justify-content: space-between;
+  width: 100%;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .section-icon {
@@ -56,6 +86,10 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
+}
+
+.two-columns {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .mode-card {
@@ -130,6 +164,94 @@
   gap: 1rem;
   justify-content: flex-end;
   padding-bottom: 2rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.compact-btn {
+  padding: 4px 8px;
+  min-height: 30px;
+}
+
+.models-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+}
+
+.model-pill {
+  padding: 8px 16px;
+  border-radius: 16px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+}
+
+.model-pill.active {
+  background: var(--accent-primary);
+  color: #fff;
+}
+
+.model-pill span {
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.model-editor {
+  margin-bottom: 24px;
+  padding: 12px;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.model-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.model-editor-header h4 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.model-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.danger-btn {
+  color: #f87171;
+}
+
+.search-engine-group {
+  margin-top: 24px;
+}
+
+.save-message {
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.save-message.success {
+  color: #4ade80;
+}
+
+.save-message.error {
+  color: #f87171;
 }
 
 .password-input-wrapper {
@@ -158,4 +280,10 @@
 
 .password-toggle-btn:hover {
   color: var(--text-primary);
+}
+
+.textarea-field {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.5;
 }

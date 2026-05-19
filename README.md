@@ -1,73 +1,68 @@
-# React + TypeScript + Vite
+# AgentX
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+AgentX is a local desktop assistant built with Electron, React, TypeScript and Vite.
 
-Currently, two official plugins are available:
+The app is designed around a simple idea: keep the assistant personal, configurable and local-first. Conversations, settings and skill documents live in the Electron user data folder, while the UI stays focused on chatting, managing models and enabling skills.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Current Capabilities
 
-## React Compiler
+- Desktop chat interface with local conversation history.
+- Multiple OpenAI-compatible model configurations.
+- Encrypted API key storage through Electron `safeStorage` when available.
+- Editable local skill documents.
+- Automatic lightweight search context for time-sensitive prompts.
+- Local IPC boundary between the React UI and Electron backend services.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Architecture
 
-## Expanding the ESLint configuration
+```text
+electron/
+  main.cjs
+  preload.cjs
+  services/
+    storage.cjs
+    conversations.cjs
+    crypto.cjs
+    llm.cjs
+    search.cjs
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+src/
+  components/
+  services/
+    configService.ts
+    conversationService.ts
+    llmService.ts
+    skillsService.ts
+  shared/
+    configDefaults.ts
+    types.ts
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+React owns presentation and interaction state. Electron owns local filesystem access, encryption, network calls and search integrations. The preload script exposes a small API to keep that boundary explicit.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run start
+npm run build
+npm run lint
+npm run build:electron
 ```
+
+On Windows PowerShell, if script execution blocks `npm`, use `npm.cmd run <script>`.
+
+## Development Priorities
+
+1. Keep the local-first philosophy: user data should remain transparent and portable.
+2. Keep model providers OpenAI-compatible, but avoid hard-coding one provider into the UI.
+3. Treat skills as user-authored instructions first; richer automation can build on top later.
+4. Keep IPC handlers narrow and typed from the renderer side.
+5. Add features only after the chat, settings and persistence loop stays reliable.
+
+## Next Steps
+
+- Add response streaming and cancellation.
+- Show search sources in assistant responses.
+- Add import/export for skills and settings.
+- Add migrations for stored config and conversation data.
+- Split Markdown rendering into a lazy chunk to reduce the production bundle size.
